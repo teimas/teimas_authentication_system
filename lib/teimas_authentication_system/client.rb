@@ -202,10 +202,10 @@ module TeimasAuthenticationSystem
       response = TeimasAuthenticationSystem::Keycloak::Users.find_user_info_by_access_token(@configuration, access_token)
       if response.present? && (parsed_user_info = JSON.parse(response))
         TeimasAuthenticationSystem::UserInfo.new(
-          :info => parsed_result,
-          :email => parsed_result["email"],
-          :roles => parsed_result["roles"],
-          :uuid => parsed_result["sub"]
+          :info => parsed_user_info,
+          :email => parsed_user_info["email"],
+          :roles => parsed_user_info["roles"],
+          :uuid => parsed_user_info["sub"]
         )
       end
     rescue Exception => exception
