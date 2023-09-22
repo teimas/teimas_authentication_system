@@ -53,7 +53,7 @@ module TeimasAuthenticationSystem
       begin
         TeimasAuthenticationSystem::Keycloak::Base.authentication_url(
           @configuration,
-          client_id,
+          @client_id,
           redirect_uri,
           'code',
           {
