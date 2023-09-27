@@ -145,7 +145,7 @@ module TeimasAuthenticationSystem
         TeimasAuthenticationSystem::SessionInfo.new({
           :id_token => refresh_session_response["id_token"],
           :refresh_token => refresh_session_response["refresh_token"],
-          :expires_in => DateTime.now + refresh_session_response["expires_in"].seconds
+          :expires_at => DateTime.now + refresh_session_response["expires_in"].seconds
         })
       else
         nil
@@ -190,7 +190,7 @@ module TeimasAuthenticationSystem
           :access_token => parsed_session_info["access_token"],
           :id_token => parsed_session_info["id_token"],
           :refresh_token => parsed_session_info["refresh_token"],
-          :expires_in => DateTime.now + parsed_session_info["expires_in"].seconds
+          :expires_at => DateTime.now + parsed_session_info["expires_in"].seconds
         })
       end
     rescue Exception => exception
