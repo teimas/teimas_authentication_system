@@ -11,7 +11,7 @@ module TeimasAuthenticationSystem
     # Token de refresco de la sesión. Permite obtener un nuevo token de sesión.
     attr_accessor :refresh_token
     # Tiempo de expiración del token de sesión en segundos
-    attr_accessor :expires_in
+    attr_accessor :expires_at
 
     #################################################################
     # CONSTRUCTOR
@@ -20,7 +20,7 @@ module TeimasAuthenticationSystem
       self.access_token = data[:access_token]
       self.id_token = data[:id_token]
       self.refresh_token = data[:refresh_token]
-      self.expires_in = data[:expires_in]
+      self.expires_at = data[:expires_at]
     end
 
   end

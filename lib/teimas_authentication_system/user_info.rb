@@ -14,7 +14,7 @@ module TeimasAuthenticationSystem
     attr_accessor :session_info
 
 
-    delegate :id_token, :refresh_token, :expires_in, :to => :session_info, :allow_nil => true, :prefix => :session
+    delegate :id_token, :refresh_token, :expires_at, :to => :session_info, :allow_nil => true, :prefix => :session
 
     #################################################################
     # CONSTRUCTOR
