@@ -1,6 +1,7 @@
 module TeimasAuthenticationSystem
 
   class Client
+    require "jwt"
     require "teimas_authentication_system/keycloak/base"
     require "teimas_authentication_system/keycloak/config"
     require "teimas_authentication_system/keycloak/management_system"
@@ -109,7 +110,7 @@ module TeimasAuthenticationSystem
     end
 
     # Loggea al usuario en keycloak y guarda en el cliente
-    # @return [TeimasAuthenticationSystem::UserInfo | nil] Devuelve la información del usuario o nil si no se ha podido realizar el login
+    # @return [TeimasAuthenticationSystem::SessionInfo | nil] Devuelve la información del usuario o nil si no se ha podido realizar el login
     def login!(redirect_uri, session_code)
       if redirect_uri.blank? || session_code.blank?
         raise(TeimasAuthenticationSystemError, "Es necesario indicar un codigo de sesión y una URL de redirección")
@@ -119,14 +120,7 @@ module TeimasAuthenticationSystem
       if session.blank?
         raise(TeimasAuthenticationSystemError, "Código de sesión invalido, no se encuentra keycloak_session_info")
       end
-
-      user_info = user_info(session.access_token)
-      if user_info.present?
-        user_info.session_info = session
-        user_info
-      else
-        raise(TeimasAuthenticationSystemError, "Código de sesión invalido")
-      end
+      session
     end
 
     # Refresca la sesión actual utilizando el token de refresco ofrecido en la sesión anterior.
@@ -198,15 +192,29 @@ module TeimasAuthenticationSystem
       nil
     end
 
+    # Devuelve la información de un usuario a partir de su token de acceso.
+    #  WARNING: Una vez recuperado es necesario comprobar que el sub coincide con el del access_token proporcionado
+    # @return [TeimasAuthenticationSystem::UserInfo] Devuelve la información de la sesión (o nil si ha fallado):
+    # - access_token: Token de sesión
+    # - expires_in: Tiempo de expiración del token de sesión en segundos
+    # - refresh_expires_in: Tiempo de expiración del token de refresco de la sesión en segundos
+    # - refresh_token: Token de refresco de la sesión
+    # - token_type: Tipo del token, normalmente Bearer
+    # - not-before-policy: Configuración que especifica si el hecho de emitir un token hace inválidos los tokens anteriores.
+    # - session_state: Id de la sesión de Keycloak
+    # - scope: Roles asociados al usuario que ha generado el token
     def user_info(access_token)
       response = TeimasAuthenticationSystem::Keycloak::Users.find_user_info_by_access_token(@configuration, access_token)
       if response.present? && (parsed_user_info = JSON.parse(response))
-        TeimasAuthenticationSystem::UserInfo.new(
-          :info => parsed_user_info,
-          :email => parsed_user_info["email"],
-          :roles => parsed_user_info["roles"],
-          :uuid => parsed_user_info["sub"]
-        )
+        decoded_access_token_payload, decoded_id_token_header = JWT.decode(access_token, nil, false)
+        if decoded_access_token_payload["sub"] == parsed_user_info["sub"]
+          TeimasAuthenticationSystem::UserInfo.new(
+            :info => parsed_user_info,
+            :email => parsed_user_info["email"],
+            :roles => parsed_user_info["roles"],
+            :uuid => parsed_user_info["sub"]
+          )
+        end
       end
     rescue Exception => exception
       Rails.logger.error("TeimasAuthenticationSystem::Client.user_info exception:#{exception.class} (#{exception.message})")

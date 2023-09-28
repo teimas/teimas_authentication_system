@@ -1,6 +1,9 @@
 module TeimasAuthenticationSystem
   class UserInfo
 
+    #################################################################
+    # ATRIBUTOS
+    #################################################################
     # ATRIBUTOS DEL USUARIO
     # JSON con la información de la sesión. De él se extraen los siguientes atributos.
     attr_accessor :info
@@ -10,11 +13,6 @@ module TeimasAuthenticationSystem
     attr_accessor :roles
     # Identificador del usuario de keycloak
     attr_accessor :uuid
-    # Sesión de Keycloak
-    attr_accessor :session_info
-
-
-    delegate :id_token, :refresh_token, :expires_at, :to => :session_info, :allow_nil => true, :prefix => :session
 
     #################################################################
     # CONSTRUCTOR
@@ -24,7 +22,6 @@ module TeimasAuthenticationSystem
       self.email = data[:email]
       self.roles = data[:roles]
       self.uuid = data[:uuid]
-      self.session_info = data[:session_info]
     end
 
   end

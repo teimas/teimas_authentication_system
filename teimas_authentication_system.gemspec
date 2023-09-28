@@ -35,7 +35,7 @@ Gem::Specification.new do |spec|
 
   spec.add_runtime_dependency "rest-client", "2.1.0"
   spec.add_runtime_dependency "json", "2.6.3"
-
+  spec.add_runtime_dependency "jwt", "2.7.1"
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html
 end

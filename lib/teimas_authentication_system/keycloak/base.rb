@@ -25,25 +25,25 @@ module TeimasAuthenticationSystem
       end
 
       def self.authentication_url(configuration, client_id, redirect_uri, response_type = 'code', params = {})
-        params = {
+        params = params.merge({
           :response_type => response_type,
           :client_id => client_id,
           :redirect_uri => redirect_uri,
           :scope => SCOPE
-        }
+        })
 
         p = URI.encode_www_form(params)
         "#{configuration['authorization_endpoint']}?#{p}"
       end
 
       def self.change_password_url(configuration, client_id, redirect_uri, response_type = 'code', params = {})
-        params = {
+        params = params.merge({
           :response_type => response_type,
           :client_id => client_id,
           :redirect_uri => redirect_uri,
           :scope => SCOPE,
           :kc_action => "UPDATE_PASSWORD"
-        }
+        })
 
         p = URI.encode_www_form(params)
         "#{configuration['authorization_endpoint']}?#{p}"
