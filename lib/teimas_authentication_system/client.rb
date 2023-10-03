@@ -151,8 +151,8 @@ module TeimasAuthenticationSystem
 
     # Desloguea el usuario.
     # @return Devuelve true o false dependiendo de si se ha podido realizar el Logout
-    def logout(token_id, refresh_token = '', redirect_url = '')
-      TeimasAuthenticationSystem::Keycloak::Users.users_logout(@configuration, @client_id, @client_secret, token_id, refresh_token, redirect_url)
+    def logout(id_token, refresh_token = '', redirect_url = '')
+      TeimasAuthenticationSystem::Keycloak::Users.users_logout(@configuration, @client_id, @client_secret, id_token, refresh_token, redirect_url)
     end
 
     # Devuelve si el usuario está autorizado en la aplicación actual comprobando
