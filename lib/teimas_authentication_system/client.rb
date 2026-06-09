@@ -5,6 +5,7 @@ module TeimasAuthenticationSystem
     require "teimas_authentication_system/keycloak/base"
     require "teimas_authentication_system/keycloak/config"
     require "teimas_authentication_system/keycloak/management_system"
+    require "teimas_authentication_system/keycloak/user_attributes"
     require "teimas_authentication_system/keycloak/users"
     require "teimas_authentication_system/exceptions"
     require "teimas_authentication_system/session_info"
@@ -82,21 +83,28 @@ module TeimasAuthenticationSystem
     # @option user_data [String | null] :username Nombre del usuario en Keycloak
     # @option user_data [String] :email Email del usuario en keycloak
     # @option user_data [String] :password Contraseña del usuario en keycloak
+    # @option user_data [Hash] :attributes Atributos custom de Keycloak (clave => valor o array de valores)
     # Nota: tanto username como email deben ser únicos para el usuario, y pueden usarse indistintamente
     # para autenticarse junto con la contraseña en Keycloak
-    # @return [Boolean] Devuelve true si el proceso ha finalizado correctamente
+    # @return [Hash | nil] Devuelve el usuario de Keycloak si el proceso ha finalizado correctamente
     def create_or_update_user!(login, user_data)
+      user_data ||= {}
+      attributes = TeimasAuthenticationSystem::Keycloak::UserAttributes.normalize(user_data[:attributes])
+
+      management_payload = {
+        username: login,
+        email: user_data[:email],
+        password: user_data[:password],
+        attributes: attributes
+      }.compact
+
       result = TeimasAuthenticationSystem::Keycloak::ManagementSystem.create_or_update_user!(
         @configuration,
         @auth_server_url,
         @realm,
         @client_id,
         @client_secret,
-        {
-          username: login,
-          email: user_data[:email],
-          password: user_data[:password]
-        }
+        management_payload
       )
       result
     rescue Exception => e

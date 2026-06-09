@@ -6,3 +6,8 @@ source "https://rubygems.org"
 gemspec
 
 gem "rake", "~> 13.0"
+
+group :development, :test do
+  gem "activesupport"
+  gem "rspec", "~> 3.12"
+end

@@ -30,17 +30,25 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
         lastName: user_data[:last_name],
         enabled: true
       }
+      user_creation_params[:attributes] = user_data[:attributes] if user_data[:attributes].present?
 
-      user ||= create_user!(auth_server_url, realm, service, user_creation_params)
+      if user.present?
+        if user_data[:attributes].present?
+          user["attributes"] = (user["attributes"] || {}).merge(user_data[:attributes])
+          user = update_user!(auth_server_url, realm, service, user["id"], user)
+        end
+      else
+        user = create_user!(auth_server_url, realm, service, user_creation_params)
 
-      if user_data[:password].present?
-        credential_representation = {
-          type: "password",
-          temporary: true,
-          value: user_data[:password]
-        }
+        if user_data[:password].present?
+          credential_representation = {
+            type: "password",
+            temporary: true,
+            value: user_data[:password]
+          }
 
-        reset_password!(auth_server_url, realm, service, user["id"], credential_representation)
+          reset_password!(auth_server_url, realm, service, user["id"], credential_representation)
+        end
       end
 
       if user_data[:client_roles_names].present?
@@ -85,6 +93,16 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
   end
 
   private
+
+  def self.update_user!(auth_server_url, realm, service, user_id, user_data)
+    headers = KEYCLOAK_JSON_COMMON_HEADERS.merge({'Authorization' => "Bearer #{service.access_token}"})
+    url = TeimasAuthenticationSystem::Keycloak::Base.admin_base_url(auth_server_url, realm) + "users/#{user_id}"
+
+    RestClient.put(url, JSON.generate(user_data), headers) do |response, request, result|
+      response.return!
+      user_data
+    end
+  end
 
   def self.find_users(auth_server_url, realm, service, search_params, imprecise_search = false)
     headers = KEYCLOAK_COMMON_HEADERS.merge({'Authorization' => "Bearer #{service.access_token}"})
