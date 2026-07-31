@@ -122,6 +122,169 @@ RSpec.describe TeimasAuthenticationSystem::Keycloak::ManagementSystem do
 
       expect(result).to eq(updated_user)
     end
+
+    it "does not search by email when the username matches" do
+      existing_user = { "id" => "user-id" }
+
+      expect(described_class).to receive(:find_users).with(
+        auth_server_url,
+        realm,
+        service,
+        { username: "user@example.com" }
+      ).and_return([existing_user])
+
+      expect(described_class).not_to receive(:find_users).with(
+        auth_server_url,
+        realm,
+        service,
+        { email: "user@example.com" }
+      )
+      expect(described_class).not_to receive(:create_user!)
+
+      result = described_class.create_or_update_user!(
+        configuration,
+        auth_server_url,
+        realm,
+        client_id,
+        client_secret,
+        {
+          username: "user@example.com",
+          email: "user@example.com"
+        }
+      )
+
+      expect(result).to eq(existing_user)
+    end
+
+    it "reuses the user found by email when the stored username does not match" do
+      existing_user = { "id" => "66882947", "username" => "mcgonzalez" }
+
+      allow(described_class).to receive(:find_users).with(
+        auth_server_url,
+        realm,
+        service,
+        { username: "mcgonzalez@sanea2.es" }
+      ).and_return([])
+
+      allow(described_class).to receive(:find_users).with(
+        auth_server_url,
+        realm,
+        service,
+        { email: "mcgonzalez@sanea2.es" }
+      ).and_return([existing_user])
+
+      expect(described_class).not_to receive(:create_user!)
+
+      result = described_class.create_or_update_user!(
+        configuration,
+        auth_server_url,
+        realm,
+        client_id,
+        client_secret,
+        {
+          username: "mcgonzalez@sanea2.es",
+          email: "mcgonzalez@sanea2.es"
+        }
+      )
+
+      expect(result).to eq(existing_user)
+    end
+
+    it "creates the user when neither the username nor the email match" do
+      allow(described_class).to receive(:find_users).with(
+        auth_server_url,
+        realm,
+        service,
+        { username: "login@example.com" }
+      ).and_return([])
+
+      expect(described_class).to receive(:find_users).with(
+        auth_server_url,
+        realm,
+        service,
+        { email: "user@example.com" }
+      ).and_return([])
+
+      expect(described_class).to receive(:create_user!).and_return({ "id" => "user-id" })
+
+      result = described_class.create_or_update_user!(
+        configuration,
+        auth_server_url,
+        realm,
+        client_id,
+        client_secret,
+        {
+          username: "login@example.com",
+          email: "user@example.com"
+        }
+      )
+
+      expect(result).to eq({ "id" => "user-id" })
+    end
+
+    it "raises when the email matches more than one user" do
+      allow(described_class).to receive(:find_users).with(
+        auth_server_url,
+        realm,
+        service,
+        { username: "mcgonzalez@sanea2.es" }
+      ).and_return([])
+
+      allow(described_class).to receive(:find_users).with(
+        auth_server_url,
+        realm,
+        service,
+        { email: "mcgonzalez@sanea2.es" }
+      ).and_return([{ "id" => "first-id" }, { "id" => "second-id" }])
+
+      expect(described_class).not_to receive(:create_user!)
+      expect(described_class).not_to receive(:update_user!)
+
+      expect do
+        described_class.create_or_update_user!(
+          configuration,
+          auth_server_url,
+          realm,
+          client_id,
+          client_secret,
+          {
+            username: "mcgonzalez@sanea2.es",
+            email: "mcgonzalez@sanea2.es",
+            attributes: { "locale" => ["es"] }
+          }
+        )
+      end.to raise_error(TeimasAuthenticationSystem::AmbiguousKeycloakUserError, /mcgonzalez@sanea2\.es/)
+    end
+
+    it "propagates search failures instead of creating a duplicated user" do
+      allow(described_class).to receive(:find_users).and_raise(RestClient::Forbidden)
+
+      expect(described_class).not_to receive(:create_user!)
+
+      expect do
+        described_class.create_or_update_user!(
+          configuration,
+          auth_server_url,
+          realm,
+          client_id,
+          client_secret,
+          {
+            username: "login@example.com",
+            email: "user@example.com"
+          }
+        )
+      end.to raise_error(RestClient::Forbidden)
+    end
+  end
+
+  describe ".find_users" do
+    it "propagates search errors instead of returning nil" do
+      allow(RestClient).to receive(:get).and_raise(RestClient::Forbidden)
+
+      expect do
+        described_class.send(:find_users, auth_server_url, realm, service, { username: "login@example.com" })
+      end.to raise_error(RestClient::Forbidden)
+    end
   end
 
   describe ".update_user!" do
