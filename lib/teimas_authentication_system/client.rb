@@ -108,11 +108,16 @@ module TeimasAuthenticationSystem
       )
       result
     rescue Exception => e
+      raise e if e.is_a?(TeimasAuthenticationSystemError)
+
+      Rails.logger.error("TeimasAuthenticationSystem::Client Error al crear crear/actualizar #{login}. exception:#{e.class} (#{e.message}) #{e.backtrace.join("\n")}")
       case e
-      when TeimasAuthenticationSystemError
-        raise e
+      when RestClient::ExceptionWithResponse
+        # Se conserva el código de estado HTTP y el cuerpo de la respuesta para que el llamante pueda distinguir un 409
+        # (username o email ya en uso) de un 500 y reaccionar de forma distinta. El mensaje se mantiene igual para no
+        # romper a quien lo compare.
+        raise(KeycloakApiError.new("Error al crear usuario en TeimasID", e.http_code, e.response.try(:body)))
       else
-        Rails.logger.error("TeimasAuthenticationSystem::Client Error al crear crear/actualizar #{login}. exception:#{e.class} (#{e.message}) #{e.backtrace.join("\n")}")
         raise(TeimasAuthenticationSystemError, "Error al crear usuario en TeimasID")
       end
     end

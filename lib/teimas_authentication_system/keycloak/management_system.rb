@@ -1,5 +1,6 @@
 module TeimasAuthenticationSystem::Keycloak::ManagementSystem
   require "teimas_authentication_system/keycloak/base"
+  require "teimas_authentication_system/exceptions"
 
   include TeimasAuthenticationSystem::Keycloak::Base
 
@@ -21,8 +22,7 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
   # @return Devuelve un hash con los datos del usuario en keycloak si el proceso ha finalizado correctamente.
   def self.create_or_update_user!(configuration, auth_server_url, realm, client_id, client_secret, user_data)
     ClientService.execute(configuration, client_id, client_secret) do |service|
-      # Salvo que se indique, find_users buscara de forma estricta por username
-      user = find_users(auth_server_url, realm, service, { :username => user_data[:username] }).try(:[], 0)
+      user = find_existing_user(auth_server_url, realm, service, user_data)
       user_creation_params = {
         username: user_data[:username],
         email: user_data[:email],
@@ -94,6 +94,37 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
 
   private
 
+  # Localiza al usuario que ya existe en Keycloak.
+  #
+  # Busca primero por username y, si no aparece, por email. El segundo intento es necesario porque en los realms con
+  # "email como username" activado el valor indexado para búsqueda puede ser el username corto original aunque la API
+  # devuelva el email en el campo username: la búsqueda estricta por username no encuentra al usuario, pero su email
+  # sigue ocupado y crearlo de nuevo hace que Keycloak responda 409 Conflict.
+  #
+  # La búsqueda por email se hace también cuando username y email coinciden, porque ése es justamente el caso afectado
+  # (el llamante habitual pasa el email como username).
+  #
+  # @return [Hash, nil] El usuario existente, o nil si no existe y por tanto hay que crearlo
+  def self.find_existing_user(auth_server_url, realm, service, user_data)
+    # Salvo que se indique, find_users buscara de forma estricta
+    user = find_users(auth_server_url, realm, service, { :username => user_data[:username] }).try(:[], 0)
+    return user if user.present?
+    return nil if user_data[:email].blank?
+
+    users_by_email = find_users(auth_server_url, realm, service, { :email => user_data[:email] })
+    return nil if users_by_email.blank?
+
+    if users_by_email.size > 1
+      raise(TeimasAuthenticationSystem::AmbiguousKeycloakUserError.new(
+        "Hay #{users_by_email.size} usuarios en Keycloak con el email #{user_data[:email]}, no se puede determinar cuál actualizar",
+        user_data[:email],
+        users_by_email.map { |found_user| found_user["id"] }
+      ))
+    end
+
+    users_by_email[0]
+  end
+
   def self.update_user!(auth_server_url, realm, service, user_id, user_data)
     headers = KEYCLOAK_JSON_COMMON_HEADERS.merge({'Authorization' => "Bearer #{service.access_token}"})
     url = TeimasAuthenticationSystem::Keycloak::Base.admin_base_url(auth_server_url, realm) + "users/#{user_id}"
@@ -104,6 +135,11 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
     end
   end
 
+  # Busca usuarios en Keycloak. Salvo que se indique lo contrario la búsqueda es estricta (exact).
+  #
+  # A diferencia del resto de buscadores, los errores se propagan a propósito: un fallo de red o de permisos (falta el
+  # rol view-users) no puede confundirse con "el usuario no existe", porque quien busca antes de crear lo interpretaría
+  # como vía libre para crear un usuario que ya existe.
   def self.find_users(auth_server_url, realm, service, search_params, imprecise_search = false)
     headers = KEYCLOAK_COMMON_HEADERS.merge({'Authorization' => "Bearer #{service.access_token}"})
     url = TeimasAuthenticationSystem::Keycloak::Base.admin_base_url(auth_server_url, realm) + "users/"
@@ -118,9 +154,6 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
       response = response.return!
       response.body.present? ? JSON.parse(response.body) : nil
     end
-  rescue StandardError => e
-    Rails.logger.error("TeimasAuthenticationSystem::Keycloak::ManagementSystem: Error buscando usuarios #{e.message}: #{e.backtrace.join("\n")}")
-    nil
   end
 
   def self.create_user!(auth_server_url, realm, service, user_data)
