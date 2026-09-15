@@ -165,7 +165,26 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
       if response.body.present?
         JSON.parse(response.body)
       else
-        find_users(auth_server_url, realm, service, { username: user_data[:username] })[0]
+        # Al crear un usuario, keycloak devuelve el id del elemento creado en la location.
+        location = response.headers[:location]
+        if location.blank?
+          raise(TeimasAuthenticationSystem::KeycloakUserLocationMissingError.new(
+            "Keycloak no devolvió la URL (Location) del usuario creado",
+            user_data[:username],
+            user_data[:email]
+          ))
+        end
+
+        # Reconstruimos la URL con nuestro propio admin_base_url en vez de usar location tal
+        # cual: si keycloak está detrás de un proxy mal configurado, location puede apuntar a
+        # un host interno no accesible.
+        user_id = location.to_s.split('/').last
+        user_url = TeimasAuthenticationSystem::Keycloak::Base.admin_base_url(auth_server_url, realm) + "users/#{user_id}"
+        get_headers = KEYCLOAK_COMMON_HEADERS.merge({'Authorization' => "Bearer #{service.access_token}"})
+
+        RestClient.get(user_url, get_headers) do |get_response, _get_request, _get_result|
+          JSON.parse(get_response.return!.body)
+        end
       end
     end
   end

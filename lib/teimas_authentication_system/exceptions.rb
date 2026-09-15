@@ -33,4 +33,17 @@ module TeimasAuthenticationSystem
     end
   end
 
+  # Keycloak respondió a la creación de un usuario con un 201 sin body y sin cabecera Location, así que no hay forma
+  # de recuperar el usuario recién creado.
+  # Hereda de TeimasAuthenticationSystemError para no romper a quien ya captura ese error.
+  class KeycloakUserLocationMissingError < TeimasAuthenticationSystemError
+    attr_reader :username, :email
+
+    def initialize(message, username = nil, email = nil)
+      super(message)
+      @username = username
+      @email = email
+    end
+  end
+
 end
