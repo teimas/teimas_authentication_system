@@ -4,6 +4,10 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
 
   include TeimasAuthenticationSystem::Keycloak::Base
 
+  # Valor que Keycloak escribe en el atributo disabledReason al deshabilitar a un usuario por agotar los intentos de
+  # login, cuando el realm tiene permanent lockout. Es lo único que distingue ese bloqueo de una baja administrativa.
+  PERMANENT_LOCKOUT_REASON = "permanentLockout"
+
   # Crea el usuario en Keycloak o, si ya existe, lo añade al grupo asociado a la aplicación.
   # @param [String] :auth_server_url URL del servidor de keycloak
   # @param [String] :realm Nombre del realm de keycloak. Se obtiene de la cuenta a través del subdominio
@@ -92,7 +96,74 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
     end
   end
 
+  # Levanta el bloqueo que el brute force protector de Keycloak le haya puesto a un usuario, y sólo ése.
+  #
+  # Keycloak bloquea de dos formas distintas según cómo esté configurado el realm, y cada una se levanta de una manera:
+  #
+  #   - Bloqueo temporal (realm sin permanent lockout, o antes de agotar los intentos): el usuario sigue con
+  #     enabled: true y el bloqueo vive en el contador de fallos. Se levanta borrando ese contador.
+  #   - Bloqueo permanente (realm con permanent lockout, al agotar los intentos): Keycloak pone enabled: false y marca
+  #     el atributo disabledReason = permanentLockout. Borrar el contador no basta, porque el bloqueo ya no vive ahí.
+  #     Se levanta con enabled: true, que de paso limpia los fallos.
+  #
+  # Un usuario deshabilitado a mano por un administrador NO lleva ese atributo, y este método lo respeta: devuelve
+  # :disabled_by_admin sin tocar nada. Es la diferencia entre desbloquear a quien falló la contraseña y reactivar una
+  # cuenta que alguien dio de baja a propósito.
+  #
+  # @return [Symbol] :temporary_lockout_cleared, :permanent_lockout_cleared o :disabled_by_admin
+  def self.unlock_user!(configuration, auth_server_url, realm, client_id, client_secret, user_id)
+    ClientService.execute(configuration, client_id, client_secret) do |service|
+      user = find_user_by_id(auth_server_url, realm, service, user_id)
+      raise(TeimasAuthenticationSystem::TeimasAuthenticationSystemError, "No existe el usuario #{user_id} en TeimasID") if user.blank?
+
+      if user["enabled"] == false
+        next :disabled_by_admin unless permanent_lockout?(user)
+
+        # enabled: true limpia por sí solo los intentos fallidos y el atributo disabledReason.
+        update_user!(auth_server_url, realm, service, user_id, { enabled: true })
+        next :permanent_lockout_cleared
+      end
+
+      # El usuario está habilitado: sólo puede quedar un bloqueo temporal. El borrado es idempotente, así que no hace
+      # falta consultar antes si hay fallos acumulados.
+      delete_brute_force_failures!(auth_server_url, realm, service, user_id)
+      :temporary_lockout_cleared
+    end
+  end
+
   private
+
+  # Un bloqueo del brute force protector deja el atributo disabledReason = permanentLockout. Keycloak devuelve los
+  # atributos como arrays de cadenas, de ahí el Array().
+  def self.permanent_lockout?(user)
+    reasons = Array(user.dig("attributes", "disabledReason"))
+    reasons.any? { |reason| reason.to_s == PERMANENT_LOCKOUT_REASON }
+  end
+
+  def self.find_user_by_id(auth_server_url, realm, service, user_id)
+    headers = KEYCLOAK_COMMON_HEADERS.merge({'Authorization' => "Bearer #{service.access_token}"})
+    url = TeimasAuthenticationSystem::Keycloak::Base.admin_base_url(auth_server_url, realm) + "users/#{user_id}"
+
+    RestClient.get(url, headers) do |response, request, result|
+      next nil if response.code == 404
+
+      response = response.return!
+      response.body.present? ? JSON.parse(response.body) : nil
+    end
+  end
+
+  # Borra los intentos fallidos acumulados. Idempotente: si el usuario no tenía ninguno, Keycloak responde igualmente
+  # 2xx, así que no hay nada que distinguir.
+  def self.delete_brute_force_failures!(auth_server_url, realm, service, user_id)
+    headers = KEYCLOAK_COMMON_HEADERS.merge({'Authorization' => "Bearer #{service.access_token}"})
+    url = TeimasAuthenticationSystem::Keycloak::Base.admin_base_url(auth_server_url, realm) +
+          "attack-detection/brute-force/users/#{user_id}"
+
+    RestClient.delete(url, headers) do |response, request, result|
+      response.return!
+      true
+    end
+  end
 
   # Localiza al usuario que ya existe en Keycloak.
   #

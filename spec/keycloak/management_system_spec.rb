@@ -349,4 +349,79 @@ RSpec.describe TeimasAuthenticationSystem::Keycloak::ManagementSystem do
       end.to raise_error(StandardError, "boom")
     end
   end
+
+  describe ".unlock_user!" do
+    let(:user_id) { "user-id" }
+
+    before do
+      allow(described_class::ClientService).to receive(:execute).and_yield(service)
+    end
+
+    def stub_user(attrs)
+      allow(described_class).to receive(:find_user_by_id).with(
+        auth_server_url, realm, service, user_id
+      ).and_return(attrs)
+    end
+
+    def unlock
+      described_class.unlock_user!(configuration, auth_server_url, realm, client_id, client_secret, user_id)
+    end
+
+    it "clears the failure counter when the user is enabled" do
+      stub_user({ "id" => user_id, "enabled" => true })
+
+      expect(described_class).to receive(:delete_brute_force_failures!).with(
+        auth_server_url, realm, service, user_id
+      ).and_return(true)
+      expect(described_class).not_to receive(:update_user!)
+
+      expect(unlock).to eq(:temporary_lockout_cleared)
+    end
+
+    it "re-enables a user locked out permanently by the brute force protector" do
+      stub_user({
+        "id" => user_id,
+        "enabled" => false,
+        "attributes" => { "disabledReason" => ["permanentLockout"] }
+      })
+
+      expect(described_class).to receive(:update_user!).with(
+        auth_server_url, realm, service, user_id, { enabled: true }
+      )
+      # enabled: true ya limpia los fallos, así que no se borra el contador por separado
+      expect(described_class).not_to receive(:delete_brute_force_failures!)
+
+      expect(unlock).to eq(:permanent_lockout_cleared)
+    end
+
+    it "leaves alone a user disabled by an administrator" do
+      stub_user({ "id" => user_id, "enabled" => false })
+
+      expect(described_class).not_to receive(:update_user!)
+      expect(described_class).not_to receive(:delete_brute_force_failures!)
+
+      expect(unlock).to eq(:disabled_by_admin)
+    end
+
+    it "leaves alone a disabled user whose disabledReason is not a lockout" do
+      stub_user({
+        "id" => user_id,
+        "enabled" => false,
+        "attributes" => { "disabledReason" => ["offboarding"] }
+      })
+
+      expect(described_class).not_to receive(:update_user!)
+
+      expect(unlock).to eq(:disabled_by_admin)
+    end
+
+    it "raises when the user does not exist in Keycloak" do
+      stub_user(nil)
+
+      expect { unlock }.to raise_error(
+        TeimasAuthenticationSystem::TeimasAuthenticationSystemError,
+        /No existe el usuario/
+      )
+    end
+  end
 end

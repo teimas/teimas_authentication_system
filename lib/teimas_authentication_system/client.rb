@@ -122,6 +122,36 @@ module TeimasAuthenticationSystem
       end
     end
 
+    # Levanta el bloqueo que el brute force protector le haya puesto al usuario, y sólo ése.
+    #
+    # Distingue el bloqueo automático por intentos fallidos (que sí levanta) de una baja administrativa (que respeta),
+    # mirando el atributo disabledReason que escribe Keycloak. Pensado para un flujo de "he olvidado mi contraseña":
+    # quien falló diez veces recupera el acceso, y quien fue dado de baja a propósito sigue de baja.
+    #
+    # @param [String] user_id Id del usuario en Keycloak (uuid)
+    # @return [Symbol] :temporary_lockout_cleared o :permanent_lockout_cleared si se levantó el bloqueo,
+    #   :disabled_by_admin si el usuario está deshabilitado por un administrador y no se ha tocado
+    def unlock_user!(user_id)
+      TeimasAuthenticationSystem::Keycloak::ManagementSystem.unlock_user!(
+        @configuration,
+        @auth_server_url,
+        @realm,
+        @client_id,
+        @client_secret,
+        user_id
+      )
+    rescue Exception => e
+      raise e if e.is_a?(TeimasAuthenticationSystemError)
+
+      Rails.logger.error("TeimasAuthenticationSystem::Client Error al desbloquear #{user_id}. exception:#{e.class} (#{e.message}) #{e.backtrace.join("\n")}")
+      case e
+      when RestClient::ExceptionWithResponse
+        raise(KeycloakApiError.new("Error al desbloquear usuario en TeimasID", e.http_code, e.response.try(:body)))
+      else
+        raise(TeimasAuthenticationSystemError, "Error al desbloquear usuario en TeimasID")
+      end
+    end
+
     # Loggea al usuario en keycloak y guarda en el cliente
     # @return [TeimasAuthenticationSystem::SessionInfo | nil] Devuelve la información del usuario o nil si no se ha podido realizar el login
     def login!(redirect_uri, session_code)
