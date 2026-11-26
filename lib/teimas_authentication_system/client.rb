@@ -122,6 +122,34 @@ module TeimasAuthenticationSystem
       end
     end
 
+    # Añade o sustituye atributos custom del usuario de Keycloak con ese id, sin tocar el resto. A diferencia de
+    # create_or_update_user!, no busca por username ni por email ni crea usuarios: si el id no existe, falla.
+    #
+    # @param [String] user_id Id del usuario en Keycloak (uuid)
+    # @param [Hash] attributes Atributos custom (clave => valor o array de valores)
+    # @return [Hash] El usuario de Keycloak tal como se ha guardado
+    def update_user_attributes!(user_id, attributes)
+      TeimasAuthenticationSystem::Keycloak::ManagementSystem.update_user_attributes!(
+        @configuration,
+        @auth_server_url,
+        @realm,
+        @client_id,
+        @client_secret,
+        user_id,
+        TeimasAuthenticationSystem::Keycloak::UserAttributes.normalize(attributes) || {}
+      )
+    rescue Exception => e
+      raise e if e.is_a?(TeimasAuthenticationSystemError)
+
+      Rails.logger.error("TeimasAuthenticationSystem::Client Error al actualizar los atributos de #{user_id}. exception:#{e.class} (#{e.message}) #{e.backtrace.join("\n")}")
+      case e
+      when RestClient::ExceptionWithResponse
+        raise(KeycloakApiError.new("Error al actualizar los atributos del usuario en TeimasID", e.http_code, e.response.try(:body)))
+      else
+        raise(TeimasAuthenticationSystemError, "Error al actualizar los atributos del usuario en TeimasID")
+      end
+    end
+
     # Levanta el bloqueo que el brute force protector le haya puesto al usuario, y sólo ése.
     #
     # Distingue el bloqueo automático por intentos fallidos (que sí levanta) de una baja administrativa (que respeta),

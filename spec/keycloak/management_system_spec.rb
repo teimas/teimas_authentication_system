@@ -350,6 +350,44 @@ RSpec.describe TeimasAuthenticationSystem::Keycloak::ManagementSystem do
     end
   end
 
+  describe ".update_user_attributes!" do
+    let(:user_id) { "user-id" }
+
+    before do
+      allow(described_class::ClientService).to receive(:execute).and_yield(service)
+    end
+
+    def update_attributes
+      described_class.update_user_attributes!(
+        configuration, auth_server_url, realm, client_id, client_secret, user_id, { "zero_account" => ["42"] }
+      )
+    end
+
+    it "merges the attributes into the user with that id" do
+      allow(described_class).to receive(:find_user_by_id).with(auth_server_url, realm, service, user_id).and_return(
+        { "id" => user_id, "username" => "ada", "attributes" => { "locale" => ["es"] } }
+      )
+
+      expect(described_class).to receive(:update_user!).with(
+        auth_server_url, realm, service, user_id,
+        { "id" => user_id, "username" => "ada", "attributes" => { "locale" => ["es"], "zero_account" => ["42"] } }
+      ).and_return(:updated)
+      expect(described_class).not_to receive(:find_users)
+      expect(described_class).not_to receive(:create_user!)
+
+      expect(update_attributes).to eq(:updated)
+    end
+
+    it "raises without touching anything when the user does not exist" do
+      allow(described_class).to receive(:find_user_by_id).and_return(nil)
+
+      expect(described_class).not_to receive(:update_user!)
+      expect(described_class).not_to receive(:create_user!)
+
+      expect { update_attributes }.to raise_error(TeimasAuthenticationSystem::TeimasAuthenticationSystemError)
+    end
+  end
+
   describe ".unlock_user!" do
     let(:user_id) { "user-id" }
 
