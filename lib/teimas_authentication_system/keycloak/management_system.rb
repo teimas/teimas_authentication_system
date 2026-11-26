@@ -131,6 +131,20 @@ module TeimasAuthenticationSystem::Keycloak::ManagementSystem
     end
   end
 
+  # Junta los atributos dados con los que ya tiene el usuario de Keycloak con ese id y lo guarda. No busca por username
+  # ni por email ni crea usuarios: si el id no existe, falla sin tocar nada.
+  #
+  # @return [Hash] El usuario de Keycloak tal como se ha guardado
+  def self.update_user_attributes!(configuration, auth_server_url, realm, client_id, client_secret, user_id, attributes)
+    ClientService.execute(configuration, client_id, client_secret) do |service|
+      user = find_user_by_id(auth_server_url, realm, service, user_id)
+      raise(TeimasAuthenticationSystem::TeimasAuthenticationSystemError, "No existe el usuario #{user_id} en TeimasID") if user.blank?
+
+      user["attributes"] = (user["attributes"] || {}).merge(attributes)
+      update_user!(auth_server_url, realm, service, user_id, user)
+    end
+  end
+
   private
 
   # Un bloqueo del brute force protector deja el atributo disabledReason = permanentLockout. Keycloak devuelve los
